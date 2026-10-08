@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Matchday - live football</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --chalk:#F2F5F1; --paper:#FFFFFF; --turf:#1B5E3B; --deep:#0D3322; --ink:#14201A;
+  --mute:#566860; --line:#D3DCD5; --amber:#F2B100; --red:#D5352A; --soft:#E6EEE8;
+  --display:"Big Shoulders Display","Arial Narrow","Roboto Condensed",Impact,sans-serif;
+  --body:"Public Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--chalk);color:var(--ink);font:400 15px/1.45 var(--body);-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+.app{max-width:1180px;margin:0 auto;padding:16px}
+
+/* header */
+.top{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;justify-content:space-between;padding:8px 0 16px}
+.brand h1{font:800 34px/1 var(--display);margin:0;letter-spacing:.01em;color:var(--deep)}
+.brand p{margin:2px 0 0;color:var(--mute);font-size:13px}
+.tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.badge{font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;background:var(--soft);color:var(--deep)}
+.badge.sample{background:#FFF1C7;color:#5C4300}
+.btn{border:1px solid var(--line);background:var(--paper);border-radius:8px;padding:7px 12px;font-size:13px;font-weight:500}
+.btn:hover{border-color:var(--turf)}
+.btn[aria-pressed="true"]{background:var(--deep);color:#fff;border-color:var(--deep)}
+.stamp{font-size:12px;color:var(--mute)}
+
+.notice{background:#FDECEA;border:1px solid #F1B9B3;color:#6B1B14;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:14px}
+.notice b{display:block}
+
+/* layout */
+.grid{display:grid;grid-template-columns:minmax(300px,370px) 1fr;gap:20px;align-items:start}
+@media (max-width:860px){.grid{grid-template-columns:1fr}}
+
+/* match list */
+.list{background:var(--paper);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.tabs{display:flex;border-bottom:1px solid var(--line)}
+.tab{flex:1;border:0;background:none;padding:12px 8px;font-weight:600;color:var(--mute);border-bottom:3px solid transparent}
+.tab[aria-selected="true"]{color:var(--deep);border-bottom-color:var(--turf)}
+.find{padding:8px 12px;border-bottom:1px solid var(--line)}
+.find input{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;background:var(--chalk)}
+.watch{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;font-size:13px;color:var(--mute)}
+.watch select{font:inherit;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:var(--paper)}
+.group h3{margin:0;padding:10px 14px 6px;font-size:13px;font-weight:600;color:var(--turf);background:var(--chalk)}
+.m{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;width:100%;text-align:left;border:0;border-top:1px solid var(--line);background:var(--paper);padding:10px 14px}
+.m:hover{background:#F7FAF7}
+.m[aria-current="true"]{background:var(--soft);box-shadow:inset 4px 0 0 var(--turf)}
+.t{display:flex;justify-content:space-between;gap:10px;line-height:1.7}
+.t b{font:800 18px/1.4 var(--display);min-width:1.2em;text-align:right}
+.st{font-size:13px;font-weight:600;color:var(--mute);text-align:right;min-width:52px;display:flex;align-items:center;gap:6px;justify-content:flex-end}
+.st.live{color:#8A5A00}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--amber);display:inline-block;animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.25}}
+.empty{padding:28px 18px;color:var(--mute);text-align:center}
+.empty b{display:block;color:var(--ink);margin-bottom:4px}
+
+/* scoreboard */
+.detail{display:grid;gap:16px}
+.board{position:relative;overflow:hidden;background:var(--deep);color:#F4F8F4;border-radius:12px;padding:20px 20px 18px}
+.board::before{content:"";position:absolute;left:50%;top:-30%;height:160%;width:2px;background:rgba(255,255,255,.07)}
+.board::after{content:"";position:absolute;left:50%;top:50%;width:190px;height:190px;margin:-95px 0 0 -95px;border:2px solid rgba(255,255,255,.07);border-radius:50%}
+.board>*{position:relative;z-index:1}
+.comp{font-size:13px;color:#B9CDBF;display:flex;gap:6px 14px;flex-wrap:wrap;margin-bottom:10px}
+.score{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px}
+.side{font:800 clamp(22px,4.2vw,38px)/1.05 var(--display);letter-spacing:.01em}
+.side.away{text-align:right}
+.nums{font:800 clamp(52px,10vw,92px)/1 var(--display);display:flex;gap:14px;align-items:center;font-variant-numeric:tabular-nums}
+.nums i{font-style:normal;color:#6F9680;font-size:.6em}
+.clockline{margin-top:12px;display:flex;justify-content:center;align-items:center;gap:12px;font-size:14px;color:#D5E3D9}
+.clock{font:800 28px/1 var(--display);font-variant-numeric:tabular-nums;background:rgba(255,255,255,.1);padding:4px 12px;border-radius:6px}
+.clock.live{color:var(--amber)}
+.ht{margin-top:8px;text-align:center;font-size:13px;color:#B9CDBF}
+
+/* timeline strip */
+.card{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.card h2{margin:0 0 10px;font-size:15px;font-weight:600}
+.strip{position:relative;height:96px;margin:6px 8px 4px}
+.axis{position:absolute;left:0;right:0;top:48px;height:6px;margin-top:-3px;background:var(--soft);border-radius:3px}
+.axis .fill{position:absolute;left:0;top:0;bottom:0;background:var(--turf);border-radius:3px;transition:width .6s linear}
+.ticks span{position:absolute;top:60px;transform:translateX(-50%);font-size:11px;color:var(--mute)}
+.ticks i{position:absolute;top:34px;width:1px;height:28px;background:var(--line)}
+.teamtag{position:absolute;left:0;font-size:11px;font-weight:600;color:var(--mute)}
+.mk{position:absolute;transform:translate(-50%,-50%);display:block}
+.mk.home{top:20px}.mk.away{top:78px}
+.mk.goal{width:16px;height:16px;border-radius:50%;background:var(--deep);border:3px solid #fff;box-shadow:0 0 0 1.5px var(--deep)}
+.mk.yellow{width:10px;height:14px;border-radius:2px;background:var(--amber)}
+.mk.red{width:10px;height:14px;border-radius:2px;background:var(--red)}
+.mk.sub{width:9px;height:9px;border:2px solid var(--turf);border-radius:50%;background:#fff}
+.mk.var,.mk.pen{width:11px;height:11px;border:2px solid var(--ink);background:#fff;transform:translate(-50%,-50%) rotate(45deg)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--mute);margin-top:8px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend .mk{position:static;transform:none}
+.legend .var{transform:rotate(45deg)}
+
+/* events */
+.head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
+.head h2{margin:0}
+.seg{display:flex;gap:4px}
+.ev{display:grid;grid-template-columns:54px 22px 1fr auto;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.ev:first-of-type{border-top:0}
+.ev .min{font:800 17px/1 var(--display);color:var(--turf);font-variant-numeric:tabular-nums}
+.ev .ic{display:flex;justify-content:center}
+.ev .ic .mk{position:static;transform:none}
+.ev .ic .var,.ev .ic .pen{transform:rotate(45deg)}
+.ev .what b{font-weight:600}
+.ev .what small{display:block;color:var(--mute);font-size:12.5px}
+.ev .tag{font-size:12px;font-weight:600;color:var(--mute)}
+.ev .tag em{font:800 16px var(--display);font-style:normal;color:var(--ink);margin-left:6px}
+.ev.neutral .what{color:var(--mute)}
+
+/* stats */
+.stat{padding:7px 0}
+.stat .row{display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:4px}
+.stat .row b{font-variant-numeric:tabular-nums}
+.bar{display:flex;gap:3px;height:6px}
+.bar span{display:block;border-radius:3px;min-width:2px}
+.bar .h{background:var(--turf)}.bar .a{background:#9DB5A6}
+.note{color:var(--mute);font-size:13px;padding:6px 0}
+
+@media (prefers-reduced-motion:reduce){.dot{animation:none}.axis .fill{transition:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <h1>Matchday</h1>
+      <p>Live football scores, events and timing from every league</p>
+    </div>
+    <div class="tools">
+      <span id="mode" class="badge">Connecting</span>
+      <button class="btn" id="england" aria-pressed="false">England only</button>
+      <button class="btn" id="pause" aria-pressed="false">Pause auto-refresh</button>
+      <button class="btn" id="refresh">Refresh now</button>
+      <a class="btn" href="/monitor.html" style="text-decoration:none">API performance</a>
+      <span class="stamp" id="stamp" aria-live="polite"></span>
+    </div>
+  </header>
+
+  <div id="notice" class="notice" role="alert" hidden></div>
+
+  <div class="grid">
+    <section class="list" aria-label="Matches">
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" id="tab-live" aria-selected="true">Live</button>
+        <button class="tab" role="tab" id="tab-today" aria-selected="false">Today</button>
+      </div>
+      <div class="find"><input id="q" type="search" placeholder="Filter by team or league" aria-label="Filter matches by team or league" autocomplete="off"></div>
+      <div id="matches"></div>
+    </section>
+    <section class="detail" id="detail" aria-live="polite"></section>
+  </div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const S = {
+  config: null, scope: 'live', england: false, q: '', paused: false,
+  matches: [], receivedAt: 0, selectedId: null, detail: null, detailAt: 0,
+  allEvents: false, error: null, updated: null, timer: null,
+};
+
+/* ---------- API ---------- */
+async function api(path, method = 'GET') {
+  const res = await fetch(path, { method, headers: { accept: 'application/json' } });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) { const e = new Error(body.error || `Request failed (${res.status})`); e.hint = body.hint; throw e; }
+  return body;
+}
+
+async function loadList() {
+  const data = await api(`/api/matches?scope=${S.scope}&england=${S.england ? 1 : 0}`);
+  S.matches = data.matches; S.receivedAt = Date.now(); S.config = { ...S.config, ...data.meta };
+}
+async function loadDetail() {
+  if (!S.selectedId) return;
+  const data = await api(`/api/matches/${encodeURIComponent(S.selectedId)}`);
+  if (data.match.id !== S.selectedId) return;
+  S.detail = data; S.detailAt = Date.now(); S.config = { ...S.config, ...data.meta };
+}
+
+async function refresh() {
+  try {
+    await loadList();
+    if (!S.selectedId && S.matches.length) selectMatch(sortMatches(S.matches)[0].id, false);
+    await loadDetail();
+    S.error = null; S.updated = new Date();
+  } catch (err) { S.error = err; }
+  render();
+}
+
+function schedule() {
+  clearInterval(S.timer);
+  const secs = S.config?.pollSeconds || 30;
+  S.timer = setInterval(() => { if (!S.paused && !document.hidden) refresh(); }, secs * 1000);
+}
+
+/* ---------- Helpers ---------- */
+const timeOf = (iso) => iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+const isLive = (m) => m.state === 'live' || m.state === 'halftime';
+
+function liveSeconds(m, receivedAt) {
+  if (m.clockSeconds == null) return null;
+  if (m.state !== 'live') return m.clockSeconds;
+  return m.clockSeconds + Math.min(60, (Date.now() - receivedAt) / 1000);
+}
+function minuteLabel(sec, phase) {
+  if (sec == null) return 'Live';
+  const m = Math.floor(sec / 60);
+  if (phase === '1st_half' && m > 45) return `45+${m - 45}'`;
+  if (phase === '2nd_half' && m > 90) return `90+${m - 90}'`;
+  return `${m}'`;
+}
+function clockText(sec) {
+  if (sec == null) return '--:--';
+  return `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+}
+function statusText(m, receivedAt) {
+  if (m.state === 'live') return minuteLabel(liveSeconds(m, receivedAt), m.phase);
+  if (m.state === 'halftime') return 'HT';
+  if (m.state === 'finished') return 'FT';
+  if (m.state === 'other') return m.phaseLabel;
+  return timeOf(m.startTime);
+}
+function sortMatches(list) {
+  const rank = { live: 0, halftime: 0, upcoming: 1, other: 2, finished: 3 };
+  return [...list].sort((a, b) => rank[a.state] - rank[b.state] || String(a.startTime).localeCompare(String(b.startTime)));
+}
+
+function selectMatch(id, doRender = true) {
+  S.selectedId = id; S.detail = null;
+  history.replaceState(null, '', `#${encodeURIComponent(id)}`);
+  if (doRender) {
+    render();
+    loadDetail().then(() => { S.error = null; render(); }).catch((e) => { S.error = e; render(); });
+    if (window.matchMedia('(max-width:860px)').matches) $('#detail').scrollIntoView({ behavior: 'smooth' });
+  }
+}
+
+/* ---------- Rendering ---------- */
+function render() {
+  renderHeader(); renderList(); renderDetail();
+}
+
+function renderHeader() {
+  const c = S.config;
+  const mode = $('#mode');
+  if (c) {
+    const sample = c.source === 'sample';
+    mode.textContent = sample ? 'Sample data' : `Live feed, ${c.upstreamCalls} API calls this session`;
+    mode.className = 'badge' + (sample ? ' sample' : '');
+  }
+  $('#stamp').textContent = S.updated ? `Updated ${S.updated.toLocaleTimeString()}` : '';
+  const n = $('#notice');
+  n.hidden = !S.error;
+  if (S.error) n.innerHTML = `<b>${esc(S.error.message)}</b>${esc(S.error.hint || '')}`;
+}
+
+function renderList() {
+  const el = $('#matches');
+  const liveCount = S.matches.filter(isLive).length;
+  $('#tab-live').textContent = 'Live' + (S.scope === 'live' || liveCount ? ` (${liveCount})` : '');
+  if (!S.matches.length) {
+    el.innerHTML = S.scope === 'live'
+      ? `<div class="empty"><b>No live matches right now</b>Open the Today tab to see kick-off times.</div>`
+      : `<div class="empty"><b>No matches found for today</b>${S.england ? 'Turn off “England only” to see other leagues.' : 'Try again later.'}</div>`;
+    return;
+  }
+  const groups = new Map();
+  const q = S.q.trim().toLowerCase();
+  const visible = q ? S.matches.filter((m) => [m.home.name, m.away.name, m.competition, m.country].join(' ').toLowerCase().includes(q)) : S.matches;
+  if (!visible.length) { el.innerHTML = `<div class="empty"><b>No matches for “${esc(S.q)}”</b>Clear the filter to see all ${S.matches.length} matches.</div>`; return; }
+  sortMatches(visible).forEach((m) => {
+    const k = `${m.competition}${m.country && !m.isEngland ? ` (${m.country})` : ''}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(m);
+  });
+  el.innerHTML = [...groups].map(([name, ms]) => `
+    <div class="group"><h3>${esc(name)}</h3>
+    ${ms.map((m) => {
+      const hasScore = m.state !== 'upcoming';
+      return `<button class="m" data-id="${esc(m.id)}" ${m.id === S.selectedId ? 'aria-current="true"' : ''}>
+        <span><span class="t"><span>${esc(m.home.name)}</span><b>${hasScore ? m.homeScore : ''}</b></span>
+        <span class="t"><span>${esc(m.away.name)}</span><b>${hasScore ? m.awayScore : ''}</b></span></span>
+        <span class="st ${isLive(m) ? 'live' : ''}">${isLive(m) ? '<i class="dot"></i>' : ''}<span data-clock="${esc(m.id)}">${esc(statusText(m, S.receivedAt))}</span></span>
+      </button>`;
+    }).join('')}</div>`).join('');
+}
+
+const ICON = {
+  score_change: 'goal', yellow_card: 'yellow', red_card: 'red', yellow_red_card: 'red', substitution: 'sub',
+  penalty_awarded: 'pen', penalty_missed: 'pen', penalty_shootout: 'pen',
+  video_assistant_referee: 'var', video_assistant_referee_over: 'var',
+};
+const eventClockMin = (e) => (e.minute ?? 0) + (e.stoppage || 0);
+const eventMinuteLabel = (e) => e.minute == null ? '' : `${e.minute}${e.stoppage ? `+${e.stoppage}` : ''}'`;
+
+function describe(e, d) {
+  const who = (role) => e.players.filter((p) => role.test(p.role)).map((p) => p.name);
+  const first = e.players[0]?.name;
+  switch (e.type) {
+    case 'score_change': {
+      const scorer = who(/scor|own/)[0] || first, assist = who(/assist/)[0];
+      const tag = e.ownGoal ? ' (own goal)' : e.penalty ? ' (penalty)' : '';
+      return { title: `Goal${tag}`, sub: [scorer, assist && `Assist: ${assist}`].filter(Boolean).join(', ') };
+    }
+    case 'yellow_card': return { title: 'Yellow card', sub: first };
+    case 'red_card': return { title: 'Red card', sub: first };
+    case 'yellow_red_card': return { title: 'Second yellow, sent off', sub: first };
+    case 'substitution': {
+      const on = who(/in$/)[0], off = who(/out$/)[0];
+      return { title: 'Substitution', sub: [on && `On: ${on}`, off && `Off: ${off}`].filter(Boolean).join(', ') };
+    }
+    case 'penalty_awarded': return { title: 'Penalty awarded' };
+    case 'penalty_missed': return { title: 'Penalty missed', sub: first };
+    case 'video_assistant_referee': return { title: 'VAR check', sub: e.detail };
+    case 'video_assistant_referee_over': return { title: 'VAR decision', sub: e.detail };
+    case 'match_started': return { title: 'Kick-off' };
+    case 'break_start': return { title: 'Half-time' };
+    case 'period_start': return { title: 'Second half begins' };
+    case 'match_ended': return { title: 'Full time' };
+    case 'injury_time_shown': return { title: 'Added time', sub: e.detail };
+    default: return { title: e.type.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()), sub: first };
+  }
+}
+
+function renderDetail() {
+  const el = $('#detail');
+  if (!S.selectedId) { el.innerHTML = `<div class="card empty"><b>Pick a match</b>Select a match from the list to see its score, timeline and events.</div>`; return; }
+  if (!S.detail) { el.innerHTML = `<div class="card empty">Loading match…</div>`; return; }
+  const { match: m, events, stats } = S.detail;
+  const sec = liveSeconds(m, S.detailAt);
+  const live = isLive(m);
+  const hasScore = m.state !== 'upcoming';
+  const ps = m.periodScores.length ? `Half-time ${m.periodScores[0].home} - ${m.periodScores[0].away}` : '';
+
+  const board = `
+  <div class="board">
+    <div class="comp"><span>${esc(m.competition)}</span>${m.round ? `<span>Round ${esc(m.round)}</span>` : ''}<span>${m.startTime ? new Date(m.startTime).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }) + ', ' + timeOf(m.startTime) : ''}</span></div>
+    <div class="score">
+      <div class="side">${esc(m.home.name)}</div>
+      <div class="nums">${hasScore ? `<span>${m.homeScore}</span><i>-</i><span>${m.awayScore}</span>` : `<span style="font-size:.55em">${esc(timeOf(m.startTime))}</span>`}</div>
+      <div class="side away">${esc(m.away.name)}</div>
+    </div>
+    <div class="clockline">
+      ${m.state === 'live' || m.state === 'halftime' || m.state === 'finished' ? `<span class="clock ${m.state === 'live' ? 'live' : ''}" data-big-clock>${clockText(sec)}</span>` : ''}
+      <span>${esc(m.state === 'upcoming' ? 'Kick-off ' + timeOf(m.startTime) : m.phaseLabel)}</span>
+    </div>
+    ${ps && m.state !== 'upcoming' ? `<div class="ht">${esc(ps)}</div>` : ''}
+  </div>`;
+
+  const watching = (S.config?.watching || []).includes(m.id);
+  const watchRow = m.state === 'finished' ? '' : `
+  <div class="card watch">
+    <b style="color:var(--ink)">Measure this match</b>
+    ${watching
+      ? `<button class="btn" data-watch="stop">Stop measuring</button><span>Polling Sportradar for fresh data and logging delays. See API performance.</span>`
+      : `<label>Check every <select id="wint"><option value="10">10 seconds</option><option value="15" selected>15 seconds</option><option value="30">30 seconds</option><option value="60">60 seconds</option></select></label>
+         <button class="btn" data-watch="start">Start measuring</button><span>Each match uses API quota while measuring.</span>`}
+  </div>`;
+
+  const marks = events.filter((e) => ICON[e.type] && e.side && e.minute != null);
+  const maxEv = Math.max(0, ...events.map(eventClockMin));
+  const axisMax = Math.max(95, Math.ceil(Math.max(maxEv, (sec ?? 0) / 60) / 5) * 5);
+  const pct = (min) => Math.min(100, (min / axisMax) * 100);
+  const nowPct = m.state === 'finished' ? 100 : sec == null ? 0 : pct(sec / 60);
+  const strip = m.state === 'upcoming' ? '' : `
+  <div class="card"><h2>Match timeline</h2>
+    <div class="strip" role="img" aria-label="Timeline of goals, cards and substitutions by minute">
+      <span class="teamtag" style="top:0">${esc(m.home.abbr)}</span><span class="teamtag" style="bottom:0">${esc(m.away.abbr)}</span>
+      <div class="axis"><span class="fill" data-fill style="width:${nowPct}%"></span></div>
+      <div class="ticks">${[0, 45, 90].map((t) => `<i style="left:${pct(t)}%"></i><span style="left:${pct(t)}%">${t}'</span>`).join('')}</div>
+      ${marks.map((e) => `<span class="mk ${ICON[e.type]} ${e.side}" style="left:${pct(eventClockMin(e))}%" title="${esc(eventMinuteLabel(e) + ' ' + describe(e).title)}"></span>`).join('')}
+    </div>
+    <div class="legend"><span><i class="mk goal"></i>Goal</span><span><i class="mk yellow"></i>Yellow card</span><span><i class="mk red"></i>Red card</span><span><i class="mk sub"></i>Substitution</span><span><i class="mk var"></i>VAR or penalty</span></div>
+  </div>`;
+
+  const shown = events.filter((e) => S.allEvents || e.key).slice().reverse();
+  const evHtml = shown.length ? shown.map((e) => {
+    const d = describe(e);
+    const icon = ICON[e.type];
+    const team = e.side === 'home' ? m.home.abbr : e.side === 'away' ? m.away.abbr : '';
+    return `<div class="ev ${icon ? '' : 'neutral'}">
+      <span class="min">${esc(eventMinuteLabel(e))}</span>
+      <span class="ic">${icon ? `<i class="mk ${icon}"></i>` : ''}</span>
+      <span class="what"><b>${esc(d.title)}</b>${d.sub ? `<small>${esc(d.sub)}</small>` : ''}</span>
+      <span class="tag">${esc(team)}${e.type === 'score_change' && e.homeScore != null ? `<em>${e.homeScore}-${e.awayScore}</em>` : ''}</span>
+    </div>`;
+  }).join('') : `<div class="note">${m.state === 'upcoming' ? 'Events appear here once the match kicks off.' : 'No events yet.'}</div>`;
+
+  const events$ = `
+  <div class="card">
+    <div class="head"><h2>Events</h2>
+      <div class="seg"><button class="btn" data-ev="key" aria-pressed="${!S.allEvents}">Key events</button><button class="btn" data-ev="all" aria-pressed="${S.allEvents}">All events</button></div>
+    </div>${evHtml}</div>`;
+
+  const statsHtml = stats.length ? stats.map((s) => {
+    const total = Number(s.home) + Number(s.away) || 1;
+    const h = (Number(s.home) / total) * 100;
+    return `<div class="stat"><div class="row"><b>${s.home}${s.unit}</b><span>${esc(s.label)}</span><b>${s.away}${s.unit}</b></div>
+      <div class="bar"><span class="h" style="width:${h}%"></span><span class="a" style="width:${100 - h}%"></span></div></div>`;
+  }).join('') : `<div class="note">${m.state === 'upcoming' ? 'Stats appear once the match starts.' : 'Stats are not included for this match in your Sportradar package.'}</div>`;
+
+  el.innerHTML = board + watchRow + strip + events$ + `<div class="card"><h2>Team stats</h2>${statsHtml}</div>`;
+}
+
+/* tick the clocks every second without refetching */
+setInterval(() => {
+  S.matches.forEach((m) => {
+    if (m.state !== 'live') return;
+    const n = document.querySelector(`[data-clock="${CSS.escape(m.id)}"]`);
+    if (n) n.textContent = minuteLabel(liveSeconds(m, S.receivedAt), m.phase);
+  });
+  if (S.detail && S.detail.match.state === 'live') {
+    const sec = liveSeconds(S.detail.match, S.detailAt);
+    const big = document.querySelector('[data-big-clock]');
+    if (big) big.textContent = clockText(sec);
+  }
+}, 1000);
+
+/* ---------- Events ---------- */
+$('#matches').addEventListener('click', (e) => { const b = e.target.closest('.m'); if (b) selectMatch(b.dataset.id); });
+$('#detail').addEventListener('click', async (e) => {
+  const w = e.target.closest('[data-watch]');
+  if (w && S.selectedId) {
+    try {
+      const url = `/api/watch/${encodeURIComponent(S.selectedId)}`;
+      const r = await api(w.dataset.watch === 'start' ? `${url}?interval=${$('#wint').value}` : url, w.dataset.watch === 'start' ? 'POST' : 'DELETE');
+      S.config = { ...S.config, ...r.meta }; S.error = null;
+    } catch (err) { S.error = err; }
+    return render();
+  }
+  const b = e.target.closest('[data-ev]'); if (!b) return;
+  S.allEvents = b.dataset.ev === 'all'; renderDetail();
+});
+function setScope(scope) {
+  S.scope = scope; S.matches = [];
+  $('#tab-live').setAttribute('aria-selected', scope === 'live');
+  $('#tab-today').setAttribute('aria-selected', scope === 'today');
+  render(); refresh();
+}
+$('#tab-live').onclick = () => setScope('live');
+$('#tab-today').onclick = () => setScope('today');
+$('#england').onclick = (e) => { S.england = !S.england; e.currentTarget.setAttribute('aria-pressed', S.england); S.matches = []; render(); refresh(); };
+$('#pause').onclick = (e) => { S.paused = !S.paused; e.currentTarget.setAttribute('aria-pressed', S.paused); e.currentTarget.textContent = S.paused ? 'Resume auto-refresh' : 'Pause auto-refresh'; };
+$('#refresh').onclick = refresh;
+$('#q').addEventListener('input', (e) => { S.q = e.target.value; renderList(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && !S.paused && S.updated && Date.now() - S.updated > 20000) refresh(); });
+
+/* ---------- Start ---------- */
+(async function init() {
+  try { S.config = await api('/api/config'); } catch (e) { S.error = e; }
+  if (location.hash.length > 1) S.selectedId = decodeURIComponent(location.hash.slice(1));
+  schedule();
+  // Open on Today when nothing is live, so the page is never empty on first load.
+  await refresh();
+  if (!S.matches.length && S.scope === 'live' && !S.error) setScope('today');
+})();
+</script>
+</body>
+</html>

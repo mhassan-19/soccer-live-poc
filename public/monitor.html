@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API performance - Matchday</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--chalk:#F2F5F1;--paper:#fff;--turf:#1B5E3B;--deep:#0D3322;--ink:#14201A;--mute:#566860;--line:#D3DCD5;--amber:#F2B100;--red:#D5352A;--soft:#E6EEE8;
+--display:"Big Shoulders Display","Arial Narrow","Roboto Condensed",Impact,sans-serif;--body:"Public Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--chalk);color:var(--ink);font:400 15px/1.5 var(--body);-webkit-font-smoothing:antialiased}
+:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+.app{max-width:1100px;margin:0 auto;padding:16px;display:grid;gap:16px}
+.top{display:flex;flex-wrap:wrap;gap:10px 16px;justify-content:space-between;align-items:center}
+h1{font:800 34px/1 var(--display);margin:0;color:var(--deep)}
+.sub{color:var(--mute);font-size:13px;margin:2px 0 0}
+.tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--paper);border-radius:8px;padding:7px 12px;font:500 13px var(--body);color:var(--ink);text-decoration:none;cursor:pointer}
+.btn:hover{border-color:var(--turf)}
+.badge{font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;background:var(--soft);color:var(--deep)}
+.badge.sample{background:#FFF1C7;color:#5C4300}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:16px}
+.card h2{margin:0 0 4px;font-size:16px}
+.card p.d{margin:0 0 12px;color:var(--mute);font-size:13.5px;max-width:70ch}
+.hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:12px}
+.hero div{background:var(--deep);color:#F4F8F4;border-radius:10px;padding:12px 14px}
+.hero b{display:block;font:800 36px/1 var(--display);font-variant-numeric:tabular-nums}
+.hero span{font-size:12.5px;color:#B9CDBF}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{text-align:left;padding:7px 10px;border-top:1px solid var(--line);white-space:nowrap}
+th{font-weight:600;color:var(--mute);border-top:0;font-size:12.5px}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+.ok{color:var(--turf);font-weight:600}.bad{color:var(--red);font-weight:600}
+.empty{color:var(--mute);padding:10px 0;font-size:14px}
+.note{background:var(--soft);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--ink);margin-top:12px;max-width:80ch}
+.watchrow{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
+.watchrow:first-of-type{border-top:0}
+.watchrow small{color:var(--mute);display:block}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div><h1>API performance</h1><p class="sub">How fast and how consistent the Sportradar feed is, measured from this computer</p></div>
+    <div class="tools">
+      <span id="mode" class="badge">Loading</span>
+      <a class="btn" href="/">Back to matches</a>
+      <a class="btn" href="/api/metrics/export" download>Download raw log (JSON)</a>
+    </div>
+  </header>
+
+  <section class="card" aria-labelledby="w">
+    <h2 id="w">Matches being measured</h2>
+    <p class="d">Event delay can only be timed on matches the server checks at a steady interval. Open a match on the main page and choose "Start measuring". A shorter interval gives finer timing but uses more of your API quota.</p>
+    <div id="watchers"></div>
+  </section>
+
+  <section class="card" aria-labelledby="l">
+    <h2 id="l">Response time</h2>
+    <p class="d">Time from sending a request to receiving the full response. Waiting in our own one-request-per-second queue is not counted.</p>
+    <div class="hero" id="latHero"></div>
+    <div class="tablewrap"><table id="latTable"></table></div>
+  </section>
+
+  <section class="card" aria-labelledby="e">
+    <h2 id="e">Event delay</h2>
+    <p class="d">For each new goal, card, substitution or VAR event, this is the gap between the timestamp Sportradar gives the event and the moment we first saw it. It reflects delay inside Sportradar's pipeline plus up to one polling interval.</p>
+    <div class="hero" id="lagHero"></div>
+    <div class="tablewrap"><table id="lagTable"></table></div>
+    <div class="note">The "best case" figure subtracts the polling gap, so the true delay lies between the best case and the observed value. Sportradar's timestamp is their own clock, not the moment the ball crossed the line. To measure real-world delay, note the time you see a goal on a broadcast and compare it with the "seen at" time in the downloaded log.</div>
+  </section>
+
+  <section class="card" aria-labelledby="a">
+    <h2 id="a">Data consistency</h2>
+    <p class="d">Automatic checks that the feed agrees with itself. These catch contradictions, not facts that are wrong everywhere, so they show whether the data is internally reliable rather than proving it matches reality.</p>
+    <div class="tablewrap"><table id="accTable"></table></div>
+    <h2 style="margin-top:16px;font-size:14px">Recent issues</h2>
+    <div class="tablewrap"><table id="accLog"></table></div>
+  </section>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ms = (n) => n == null ? '-' : n < 1000 ? `${Math.round(n)} ms` : `${(n / 1000).toFixed(1)} s`;
+const clock = (iso) => new Date(iso).toLocaleTimeString();
+const hero = (items) => items.map(([v, l]) => `<div><b>${v}</b><span>${esc(l)}</span></div>`).join('');
+const table = (head, rows, empty) => rows.length
+  ? `<thead><tr>${head.map(([h, n]) => `<th class="${n ? 'n' : ''}">${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c, i) => `<td class="${head[i][1] ? 'n' : ''}">${c}</td>`).join('')}</tr>`).join('')}</tbody>`
+  : `<tbody><tr><td class="empty" style="border:0">${esc(empty)}</td></tr></tbody>`;
+
+const CHECKS = {
+  score_matches_events: 'Score agrees with goal events',
+  events_in_order: 'Events are in time order',
+  no_duplicate_events: 'No duplicate events',
+  period_scores_sum: 'Half and full-time scores add up',
+  clock_sane: 'Match clock is present and plausible',
+  summary_vs_timeline: 'Live list and timeline show the same score',
+};
+const ENDPOINTS = { live: 'Live matches list', daily: 'Daily schedule', timeline: 'Match timeline' };
+const TYPES = { score_change: 'Goal', yellow_card: 'Yellow card', red_card: 'Red card', yellow_red_card: 'Second yellow', substitution: 'Substitution', video_assistant_referee: 'VAR check', video_assistant_referee_over: 'VAR decision', penalty_awarded: 'Penalty awarded', penalty_missed: 'Penalty missed', match_started: 'Kick-off', break_start: 'Half-time', period_start: 'Second half', match_ended: 'Full time', injury_time_shown: 'Added time' };
+
+async function stopWatch(id) { await fetch(`/api/watch/${encodeURIComponent(id)}`, { method: 'DELETE' }); load(); }
+window.stopWatch = stopWatch;
+
+function render(d) {
+  const sample = d.meta.source === 'sample';
+  $('#mode').textContent = sample ? 'Sample data (timings are simulated)' : 'Live feed';
+  $('#mode').className = 'badge' + (sample ? ' sample' : '');
+
+  $('#watchers').innerHTML = d.watchers.length ? d.watchers.map((w) => `
+    <div class="watchrow"><div><b>${esc(w.label)}</b><small>Every ${w.intervalSec} s, ${w.polls} checks so far, about ${w.callsPerHour} calls per hour${w.lastError ? `, last error: ${esc(w.lastError)}` : ''}</small></div>
+    <button class="btn" onclick="stopWatch('${esc(w.id)}')">Stop</button></div>`).join('')
+    : `<div class="empty">No matches are being measured. ${d.watchHistory.length ? `Last stopped: ${esc(d.watchHistory[0].label)} (${esc(d.watchHistory[0].reason)}).` : ''}</div>`;
+
+  const o = d.latency.overall;
+  $('#latHero').innerHTML = hero([[ms(o.p50), 'Typical response (median)'], [ms(o.p95), 'Slowest 5% of responses'], [o.total, 'Requests made'], [o.errors, 'Failed requests']]);
+  $('#latTable').innerHTML = table(
+    [['Endpoint'], ['Requests', 1], ['Median', 1], ['95th percentile', 1], ['Slowest', 1], ['Time to first byte (median)', 1], ['Average size', 1], ['Errors', 1]],
+    Object.entries(d.latency.byEndpoint).filter(([, s]) => s.total).map(([k, s]) => [ENDPOINTS[k], s.total, ms(s.p50), ms(s.p95), ms(s.max), ms(s.ttfb.p50), `${s.avgKb} KB`, s.errors ? `<span class="bad">${s.errors}</span>` : '0']),
+    'No requests yet. Open the main page to generate some.');
+
+  const g = d.eventLag;
+  $('#lagHero').innerHTML = hero([[ms(g.overall.p50), 'Typical delay seen'], [ms(g.overall.p95), 'Slowest 5%'], [ms(g.lowerBound.p50), 'Typical delay, best case'], [g.overall.n || 0, 'Events timed']]);
+  $('#lagTable').innerHTML = table(
+    [['Seen at'], ['Match'], ['Event'], ['Minute', 1], ['Delay seen', 1], ['Best case', 1], ['Polling gap', 1]],
+    g.recent.map((l) => [clock(l.seenAt), esc(l.match), esc(TYPES[l.type] || l.type), l.minute != null ? `${l.minute}'` : '-', ms(l.lagMs), ms(l.lowerBoundMs), ms(l.sincePrevPollMs)]),
+    'No events timed yet. Start measuring a live match and wait for something to happen.');
+
+  const checks = Object.entries(d.accuracy.checks);
+  $('#accTable').innerHTML = table(
+    [['Check'], ['Matches checked', 1], ['Failing now', 1], ['Failures logged', 1], ['Typical time to clear', 1]],
+    Object.keys(CHECKS).filter((k) => d.accuracy.checks[k]).map((k) => { const c = d.accuracy.checks[k];
+      return [CHECKS[k], c.matches, c.failingNow ? `<span class="bad">${c.failingNow}</span>` : '<span class="ok">0</span>', c.failuresLogged, c.recoveryStats.n ? ms(c.recoveryStats.p50) : '-']; }),
+    'No matches checked yet. Open a match on the main page.');
+  $('#accLog').innerHTML = table(
+    [['Time'], ['Match'], ['Check'], ['Result']],
+    d.accuracy.recent.map((l) => [clock(l.at), esc(l.match), esc(CHECKS[l.check] || l.check), l.ok ? `<span class="ok">Resolved after ${ms(l.failedForMs)}</span>` : `<span class="bad">${esc(l.detail)}</span>`]),
+    'No inconsistencies recorded.');
+}
+
+async function load() {
+  try { const r = await fetch('/api/metrics'); render(await r.json()); } catch (e) { $('#mode').textContent = 'Cannot reach the server'; }
+}
+load(); setInterval(() => { if (!document.hidden) load(); }, 5000);
+</script>
+</body>
+</html>
