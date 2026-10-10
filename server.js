@@ -140,6 +140,16 @@ const getTimeline = (id, fresh = false) =>
     ? fetchTimeline(id)
     : cached(`tl:${id}`, (d) => (classify(d?.sport_event_status).state === 'finished' ? 300000 : 15000), () => fetchTimeline(id), fresh);
 
+async function fetchLineups(id) {
+  return USE_MOCK ? mockCall('lineups', () => mock.lineups(id)) : upstream(`/sport_events/${id}/lineups.json`, 'lineups');
+}
+const getLineups = (id) => (USE_MOCK ? fetchLineups(id) : cached(`lu:${id}`, 120000, () => fetchLineups(id)));
+
+async function fetchStandings(sid) {
+  return USE_MOCK ? mockCall('standings', () => mock.standings(sid)) : upstream(`/seasons/${sid}/standings.json`, 'standings');
+}
+const getStandings = (sid) => (USE_MOCK ? fetchStandings(sid) : cached(`st:${sid}`, 300000, () => fetchStandings(sid)));
+
 // ---------- Normalizers ----------
 const LIVE_STATES = new Set(['live', '1st_half', '2nd_half', 'overtime', 'extra_time', '1st_extra', '2nd_extra', 'penalties']);
 const DONE_STATES = new Set(['closed', 'ended', 'aet', 'ap']);
@@ -199,6 +209,8 @@ function normMatch(item = {}) {
     country: ctx.category?.name || null,
     isEngland: ctx.category?.country_code === 'ENG' || ctx.category?.name === 'England',
     round: ctx.round?.number ?? null,
+    seasonId: ctx.season?.id || null,
+    seasonName: ctx.season?.name || null,
     home: toTeam(pick('home', 0)),
     away: toTeam(pick('away', 1)),
     homeScore: st.home_score ?? (state === 'upcoming' ? null : 0),
@@ -226,6 +238,8 @@ function normEvent(e, i) {
     key: KEY_TYPES.has(e.type),
     minute: e.match_time ?? null,
     stoppage: e.stoppage_time ?? null,
+    period: e.period ?? null,
+    periodName: e.period_name || null,
     side: e.competitor || null,
     players,
     homeScore: e.home_score ?? null,
@@ -255,6 +269,88 @@ function normStats(raw) {
   return STAT_DEFS
     .filter(([k]) => home[k] !== undefined || away[k] !== undefined)
     .map(([key, label, unit]) => ({ key, label, unit, home: home[key] ?? 0, away: away[key] ?? 0 }));
+}
+
+function normLineups(raw) {
+  const lu = raw?.lineups;
+  const comps = lu?.competitors || [];
+  if (!comps.length) return null;
+  const toSide = (c) => {
+    if (!c) return null;
+    const players = (c.players || []).map((p, i) => ({
+      id: p.id || null,
+      name: shortName(p.name) || p.name || 'Unknown',
+      number: p.jersey_number ?? p.shirt_number ?? null,
+      pos: String(p.type || p.position || ''),
+      order: p.order ?? i + 1,
+      starter: p.starter === true,
+    }));
+    let starters = players.filter((p) => p.starter);
+    let bench = players.filter((p) => !p.starter);
+    if (!starters.length && players.length >= 11) { starters = players.slice(0, 11); bench = players.slice(11); }
+    starters.sort((a, b) => a.order - b.order);
+    return { name: c.name, abbr: c.abbreviation || null, formation: c.formation?.type || null, manager: c.manager?.name || null, starters, bench };
+  };
+  const side = (q, i) => comps.find((c) => c.qualifier === q) || comps[i];
+  return { confirmed: lu.confirmed ?? null, home: toSide(side('home', 0)), away: toSide(side('away', 1)) };
+}
+
+function normStandings(raw) {
+  const toRow = (r) => ({
+    rank: r.rank ?? null,
+    id: r.competitor?.id || null,
+    name: r.competitor?.name || 'Unknown',
+    played: r.played ?? 0, win: r.win ?? 0, draw: r.draw ?? 0, loss: r.loss ?? 0,
+    gf: r.goals_for ?? 0, ga: r.goals_against ?? 0,
+    gd: r.goals_diff ?? r.goal_diff ?? (r.goals_for ?? 0) - (r.goals_against ?? 0),
+    points: r.points ?? 0,
+    form: r.competitor?.form || null,
+    outcome: r.current_outcome || null,
+  });
+  // Sportradar nests the team rows under "standings" inside each group; older layouts use "team_standings".
+  const rowsOf = (g) => (Array.isArray(g.team_standings) ? g.team_standings : Array.isArray(g.standings) ? g.standings : []);
+  const toGroup = (g) => ({ name: g.name || g.group_name || null, year: g.stage?.year || null, rows: rowsOf(g).map(toRow) });
+
+  const blocks = Array.isArray(raw?.standings) ? raw.standings : [];
+  const tableFor = (type) => {
+    const b = blocks.find((x) => x.type === type);
+    if (!b) return [];
+    const gs = Array.isArray(b.groups) ? b.groups.map(toGroup) : rowsOf(b).length ? [toGroup(b)] : [];
+    return gs.filter((g) => g.rows.length);
+  };
+  const tables = { total: tableFor('total'), home: tableFor('home'), away: tableFor('away') };
+  const round = blocks.find((x) => x.type === 'total')?.round ?? null;
+
+  // Untyped layouts: use the first block that has rows, never a home or away one.
+  if (!tables.total.length) {
+    for (const b of blocks.filter((x) => !x.type || !/home|away|half/.test(x.type))) {
+      const gs = (Array.isArray(b.groups) ? b.groups.map(toGroup) : rowsOf(b).length ? [toGroup(b)] : []).filter((g) => g.rows.length);
+      if (gs.length) { tables.total = gs; break; }
+    }
+  }
+
+  // Last resort: look anywhere in the response for a list of team rows, skipping home, away and half tables.
+  if (!tables.total.length) {
+    const found = [];
+    (function walk(o, depth) {
+      if (!o || typeof o !== 'object' || depth > 6 || /home|away|half/.test(o.type || '')) return;
+      const rows = Array.isArray(o.team_standings) ? o.team_standings : Array.isArray(o.standings) && o.standings[0]?.competitor ? o.standings : null;
+      if (rows && rows.length) { found.push(toGroup(o)); return; }
+      Object.values(o).forEach((v) => walk(v, depth + 1));
+    })(raw, 0);
+    tables.total = found.filter((g) => g.rows.length);
+  }
+
+  if (tables.total.length) return { groups: tables.total, tables, round, debug: null };
+  return {
+    groups: [], tables, round,
+    debug: {
+      topLevelKeys: Object.keys(raw || {}),
+      standings: Array.isArray(raw?.standings)
+        ? raw.standings.map((b) => ({ type: b.type ?? null, keys: Object.keys(b), groups: Array.isArray(b.groups) ? b.groups.length : null }))
+        : typeof raw?.standings,
+    },
+  };
 }
 
 // ---------- Latency and accuracy measurement ----------
@@ -463,6 +559,87 @@ app.get('/api/matches/:id', async (req, res) => {
   }
 });
 
+app.get('/api/matches/:id/lineups', async (req, res) => {
+  const { id } = req.params;
+  if (!validId(id)) return res.status(400).json({ error: 'Invalid match id.' });
+  try {
+    const raw = await getLineups(id);
+    res.json({ lineups: normLineups(raw), meta: meta() });
+  } catch (err) {
+    if (err.status === 404) return res.json({ lineups: null, meta: meta() }); // not published yet
+    sendError(res, err);
+  }
+});
+
+app.get('/api/seasons/:sid/standings', async (req, res) => {
+  const { sid } = req.params;
+  if (!/^sr:season:\d+$/.test(sid)) return res.status(400).json({ error: 'Invalid season id.' });
+  try {
+    res.json({ ...normStandings(await getStandings(sid)), seasonId: sid, meta: meta() });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// Shows exactly what Sportradar returned, before this app reshapes it. Handy when a view looks empty.
+app.get('/api/debug/:kind/:id', async (req, res) => {
+  const { kind, id } = req.params;
+  try {
+    let raw;
+    if (kind === 'standings' && /^sr:season:\d+$/.test(id)) raw = await getStandings(id);
+    else if (kind === 'lineups' && validId(id)) raw = await getLineups(id);
+    else if (kind === 'timeline' && validId(id)) raw = await getTimeline(id);
+    else return res.status(400).json({ error: 'Use /api/debug/standings/{season id}, /api/debug/lineups/{match id} or /api/debug/timeline/{match id}.' });
+    res.type('application/json').send(JSON.stringify(raw, null, 2));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// Tests whether your key can read Sportradar's Images API (player headshots) for a soccer league.
+// It asks each provider for the yearly player manifest and reports the HTTP status. Your key is never shown.
+app.get('/api/images/check', async (req, res) => {
+  const league = String(req.query.league || 'epl').replace(/[^a-z0-9_-]/gi, '');
+  const year = /^\d{4}$/.test(String(req.query.year || '')) ? String(req.query.year) : String(new Date().getUTCFullYear());
+  const providers = req.query.provider
+    ? [String(req.query.provider).replace(/[^a-z_]/gi, '')]
+    : ['getty', 'reuters', 'ap', 'usat'];
+  if (USE_MOCK) {
+    return res.json({ sample: true, note: 'Sample mode makes no real calls. Add your key to .env and restart to run this test.', league, year, meta: meta() });
+  }
+  const level = ACCESS.toLowerCase().startsWith('p') ? 'p' : 't';
+  const verdict = (status) => ({
+    200: 'Works. Your key can read headshots for this provider and league.',
+    401: 'The Images API rejected this key. It is probably not an Images key.',
+    403: 'Your key is not allowed on the Images API. This usually means your package does not include it.',
+    404: 'Reached the Images API, but this provider has no manifest for this league or year. Try another provider or year.',
+    429: 'Rate limit reached. Wait a moment and try again.',
+  }[status] || `Unexpected answer (HTTP ${status}).`);
+  const results = [];
+  for (const provider of providers) {
+    const url = `https://api.sportradar.com/soccer-images-${level}3/${provider}/${league}/headshots/players/${year}/manifest.json`;
+    try {
+      const r = await throttled(async () => {
+        upstreamCalls++;
+        const t0 = performance.now();
+        const resp = await fetch(url, { headers: { 'x-api-key': API_KEY, accept: 'application/json' }, signal: AbortSignal.timeout(20000) });
+        let sample = '', bytes = 0;
+        if (resp.ok && resp.body) {
+          const reader = resp.body.getReader(); const dec = new TextDecoder();
+          while (bytes < 65536) { const { done, value } = await reader.read(); if (done) break; bytes += value.length; sample += dec.decode(value, { stream: true }); }
+          reader.cancel().catch(() => {});
+        } else { sample = (await resp.text().catch(() => '')).slice(0, 300); }
+        push(calls, { ts: Date.now(), kind: 'images', ms: Math.round(performance.now() - t0), status: resp.status, ok: resp.ok, bytes });
+        return { status: resp.status, sample };
+      });
+      results.push({ provider, url, status: r.status, verdict: verdict(r.status), sample: r.sample.slice(0, 500) });
+    } catch (err) {
+      results.push({ provider, url, status: 0, verdict: `No answer: ${err.name === 'TimeoutError' ? 'timed out' : err.message}` });
+    }
+  }
+  res.json({ league, year, accessLevel: level, anyWorking: results.some((x) => x.status === 200), results, meta: meta() });
+});
+
 app.post('/api/watch/:id', (req, res) => {
   const { id } = req.params;
   if (!validId(id)) return res.status(400).json({ error: 'Invalid match id.' });
@@ -506,7 +683,7 @@ app.get('/api/metrics', (req, res) => {
     meta: { ...meta(), startedAt: new Date(startedAt).toISOString(), now: new Date().toISOString() },
     latency: {
       overall: callStats(calls),
-      byEndpoint: { live: callStats(by('live')), daily: callStats(by('daily')), timeline: callStats(by('timeline')) },
+      byEndpoint: { live: callStats(by('live')), daily: callStats(by('daily')), timeline: callStats(by('timeline')), lineups: callStats(by('lineups')), standings: callStats(by('standings')) },
       recent: calls.slice(-15).reverse(),
     },
     eventLag: {

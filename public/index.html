@@ -125,6 +125,39 @@ button{font:inherit;color:inherit;cursor:pointer}
 .bar .h{background:var(--turf)}.bar .a{background:#9DB5A6}
 .note{color:var(--mute);font-size:13px;padding:6px 0}
 
+/* view switch, lineups, table */
+.views{display:flex;gap:6px;flex-wrap:wrap}
+.lu{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:700px){.lu{grid-template-columns:1fr}}
+.lu h2 small{font-weight:500;color:var(--mute);margin-left:6px}
+.mgr{font-size:13px;color:var(--mute);margin:-4px 0 10px}
+.pitch{position:relative;display:flex;flex-direction:column-reverse;justify-content:space-around;gap:6px;min-height:360px;padding:14px 4px;border-radius:10px;background:repeating-linear-gradient(0deg,#1D6B43 0 44px,#1A623D 44px 88px);border:2px solid rgba(255,255,255,.75)}
+.pitch::before{content:"";position:absolute;left:0;right:0;top:50%;height:2px;background:rgba(255,255,255,.45)}
+.pline{display:flex;justify-content:space-around;position:relative;z-index:1}
+.pp{display:flex;flex-direction:column;align-items:center;flex:1;min-width:0;text-align:center;color:#fff;font-size:11.5px;line-height:1.15}
+.pp b{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#fff;color:var(--deep);font:800 14px var(--display);margin-bottom:2px}
+.pp span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.plist{list-style:none;margin:10px 0 0;padding:0}
+.plist li{display:flex;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:14px}
+.plist li:first-child{border-top:0}
+.plist .no{width:26px;text-align:right;font:800 15px var(--display);color:var(--turf)}
+.plist .ps{margin-left:auto;color:var(--mute);font-size:12.5px;text-transform:capitalize}
+.sub-h{margin:14px 0 2px;font-size:13px;font-weight:600;color:var(--mute)}
+.tbl{width:100%;border-collapse:collapse;font-size:14px}
+.tbl th,.tbl td{padding:7px 8px;text-align:right;border-top:1px solid var(--line);white-space:nowrap;font-variant-numeric:tabular-nums}
+.tbl th{border-top:0;color:var(--mute);font-weight:600;font-size:12.5px}
+.tbl th:nth-child(2),.tbl td:nth-child(2){text-align:left;width:100%}
+.tbl tr.me td{background:var(--soft);font-weight:600}
+.tbl td.pts{font-weight:700}
+.zone{display:inline-block;width:4px;height:16px;border-radius:2px;background:var(--turf);vertical-align:middle;margin-right:6px}
+.zone.cl{background:#1F4E9E}.zone.clq{background:#5B86D6}.zone.el{background:#E07B00}.zone.ecl{background:#2A9D8F}.zone.bad{background:var(--red)}
+.form{display:inline-flex;gap:2px}
+.form i{font-style:normal;font:700 10px/16px var(--body);width:16px;height:16px;text-align:center;border-radius:3px;color:#fff}
+.form .W{background:var(--turf)}.form .D{background:#8A958F}.form .L{background:var(--red)}
+.zlegend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--mute);margin-top:10px}
+.zlegend span{display:inline-flex;align-items:center}
+.tbl th:last-child,.tbl td:last-child{text-align:left}
+.tablewrap{overflow-x:auto}
 @media (prefers-reduced-motion:reduce){.dot{animation:none}.axis .fill{transition:none}}
 </style>
 </head>
@@ -167,7 +200,7 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':
 const S = {
   config: null, scope: 'live', england: false, q: '', paused: false,
   matches: [], receivedAt: 0, selectedId: null, detail: null, detailAt: 0,
-  allEvents: false, error: null, updated: null, timer: null,
+  allEvents: false, view: 'match', lineups: null, table: null, tableType: 'total', error: null, updated: null, timer: null,
 };
 
 /* ---------- API ---------- */
@@ -238,7 +271,7 @@ function sortMatches(list) {
 }
 
 function selectMatch(id, doRender = true) {
-  S.selectedId = id; S.detail = null;
+  S.selectedId = id; S.detail = null; S.view = 'match'; S.lineups = null; S.table = null;
   history.replaceState(null, '', `#${encodeURIComponent(id)}`);
   if (doRender) {
     render();
@@ -326,8 +359,13 @@ function describe(e, d) {
     case 'video_assistant_referee': return { title: 'VAR check', sub: e.detail };
     case 'video_assistant_referee_over': return { title: 'VAR decision', sub: e.detail };
     case 'match_started': return { title: 'Kick-off' };
-    case 'break_start': return { title: 'Half-time' };
-    case 'period_start': return { title: 'Second half begins' };
+    case 'break_start': return { title: e.period === 1 ? 'Half-time' : 'Break in play' };
+    case 'period_start': {
+      const n = e.period;
+      const title = n === 1 ? 'First half begins' : n === 2 ? 'Second half begins' : n >= 3 ? 'Extra time begins'
+        : e.periodName ? `${e.periodName.replace(/^./, (c) => c.toUpperCase())} begins` : 'Period begins';
+      return { title };
+    }
     case 'match_ended': return { title: 'Full time' };
     case 'injury_time_shown': return { title: 'Added time', sub: e.detail };
     default: return { title: e.type.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()), sub: first };
@@ -411,7 +449,109 @@ function renderDetail() {
       <div class="bar"><span class="h" style="width:${h}%"></span><span class="a" style="width:${100 - h}%"></span></div></div>`;
   }).join('') : `<div class="note">${m.state === 'upcoming' ? 'Stats appear once the match starts.' : 'Stats are not included for this match in your Sportradar package.'}</div>`;
 
-  el.innerHTML = board + watchRow + strip + events$ + `<div class="card"><h2>Team stats</h2>${statsHtml}</div>`;
+  const viewTabs = `<div class="views" role="tablist" aria-label="Match views">
+    ${[['match', 'Match'], ['lineups', 'Lineups'], ['table', 'Table']].map(([k, t]) => `<button class="btn" data-view="${k}" aria-pressed="${S.view === k}">${t}</button>`).join('')}</div>`;
+  const body = S.view === 'lineups' ? lineupsView(m) : S.view === 'table' ? tableView(m)
+    : strip + events$ + `<div class="card"><h2>Team stats</h2>${statsHtml}</div>`;
+  el.innerHTML = board + watchRow + viewTabs + body;
+}
+
+/* ---------- Lineups and table ---------- */
+const POS_ROW = [/goal|^gk$|^g$/i, /def|back|^d$/i, /mid|^m$/i, /forw|attack|strik|wing|^f$|^a$/i];
+function pitchRows(side) {
+  const st = side.starters;
+  if (st.length !== 11) return null;
+  const rows = [[], [], [], []];
+  const typed = st.every((p) => POS_ROW.some((re) => re.test(p.pos)));
+  if (typed) {
+    st.forEach((p) => rows[POS_ROW.findIndex((re) => re.test(p.pos))].push(p));
+    if (rows[0].length === 1) return rows.filter((r) => r.length);
+  }
+  // Fallback: split by formation digits, assuming the goalkeeper is listed first and then back to front.
+  const parts = (side.formation || '').split('-').map(Number);
+  if (parts.length < 2 || parts.some((n) => !n) || parts.reduce((a, b) => a + b, 0) !== 10) return null;
+  const out = [[st[0]]]; let i = 1;
+  parts.forEach((n) => { out.push(st.slice(i, i + n)); i += n; });
+  return out;
+}
+function lineupSide(side) {
+  if (!side) return '';
+  const rows = pitchRows(side);
+  const pitch = rows ? `<div class="pitch" role="img" aria-label="Approximate starting positions">${rows.map((r) => `<div class="pline">${r.map((p) => `<span class="pp"><b>${esc(p.number ?? '')}</b><span>${esc(p.name.split(' ').slice(-1)[0])}</span></span>`).join('')}</div>`).join('')}</div>` : '';
+  const list = (ps) => `<ul class="plist">${ps.map((p) => `<li><span class="no">${esc(p.number ?? '')}</span><span>${esc(p.name)}</span><span class="ps">${esc(p.pos)}</span></li>`).join('')}</ul>`;
+  return `<div class="card"><h2>${esc(side.name)}${side.formation ? `<small>${esc(side.formation)}</small>` : ''}</h2>
+    ${side.manager ? `<p class="mgr">Manager: ${esc(side.manager)}</p>` : ''}
+    ${pitch || list(side.starters)}
+    ${pitch ? `<p class="sub-h">Starting XI</p>${list(side.starters)}` : ''}
+    ${side.bench.length ? `<p class="sub-h">Substitutes</p>${list(side.bench)}` : ''}</div>`;
+}
+function panelState(slot, what) {
+  if (!slot || slot.loading) return `<div class="card empty">Loading ${what}…</div>`;
+  if (slot.error) return `<div class="card empty"><b>${esc(slot.error.message)}</b>${esc(slot.error.hint || '')}<br><button class="btn" data-reload style="margin-top:10px">Try again</button></div>`;
+  return null;
+}
+function lineupsView() {
+  const st = panelState(S.lineups, 'lineups'); if (st) return st;
+  const lu = S.lineups.data.lineups;
+  if (!lu) return `<div class="card empty"><b>Lineups are not published yet</b>They usually appear closer to kick-off.<br><button class="btn" data-reload style="margin-top:10px">Check again</button></div>`;
+  return `<div class="lu">${lineupSide(lu.home)}${lineupSide(lu.away)}</div>
+    <div class="stamp">${lu.confirmed === false ? 'Predicted lineups, not confirmed yet. ' : ''}<button class="btn" data-reload>Reload</button></div>`;
+}
+function zoneClass(o) {
+  if (!o) return '';
+  if (/releg/i.test(o)) return 'bad';
+  if (/champions/i.test(o)) return /qualif/i.test(o) ? 'clq' : 'cl';
+  if (/europa/i.test(o)) return 'el';
+  if (/conference/i.test(o)) return 'ecl';
+  return '';
+}
+function tableView(m) {
+  const sid = m.seasonId || S.matches.find((x) => x.id === m.id)?.seasonId;
+  if (!sid) return `<div class="card empty"><b>No season information for this match</b>Sportradar did not include a season id, so the table cannot be loaded.</div>`;
+  const st = panelState(S.table, 'table'); if (st) return st;
+  const data = S.table.data;
+  const tables = data.tables || { total: data.groups };
+  const type = tables[S.tableType]?.length ? S.tableType : 'total';
+  const groups = (tables[type] || []).filter((g) => g.rows.length);
+  if (!groups.length) {
+    const dbg = data.debug;
+    return `<div class="card empty"><b>No table rows in Sportradar's answer</b>
+      Sportradar replied for season ${esc(sid)} but sent no standings rows I can read. That is normal for cups and some stages, and it can also mean the response has a layout this app does not read yet.
+      ${dbg ? `<br><small>Response contains: ${esc(dbg.topLevelKeys.join(', ') || 'nothing')}</small>` : ''}
+      <br><a class="btn" style="display:inline-block;margin-top:10px;text-decoration:none" href="/api/debug/standings/${encodeURIComponent(sid)}" target="_blank" rel="noopener">View the raw response</a>
+      <button class="btn" data-reload style="margin-top:10px">Try again</button></div>`;
+  }
+  const mine = (r) => r.id === m.home.id || r.id === m.away.id;
+  const types = [['total', 'Overall'], ['home', 'Home'], ['away', 'Away']].filter(([k]) => tables[k]?.length);
+  const seen = new Map();
+  const switcher = types.length > 1 ? `<div class="views" style="margin-bottom:2px">${types.map(([k, t]) => `<button class="btn" data-ttype="${k}" aria-pressed="${k === type}">${t}</button>`).join('')}</div>` : '';
+  const cards = groups.map((g) => `<div class="card"><h2>${esc(g.name || m.competition)}${g.year ? `<small>${esc(g.year)}</small>` : ''}</h2>
+    ${data.round ? `<p class="mgr">After round ${esc(data.round)}</p>` : ''}
+    <div class="tablewrap"><table class="tbl"><thead><tr><th>#</th><th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th><th>Form</th></tr></thead><tbody>
+    ${g.rows.map((r) => { const z = zoneClass(r.outcome); if (r.outcome) seen.set(r.outcome, z);
+      return `<tr class="${mine(r) ? 'me' : ''}"><td>${esc(r.rank)}</td><td>${r.outcome ? `<i class="zone ${z}" title="${esc(r.outcome)}"></i>` : ''}${esc(r.name)}</td><td>${r.played}</td><td>${r.win}</td><td>${r.draw}</td><td>${r.loss}</td><td>${r.gf}</td><td>${r.ga}</td><td>${r.gd > 0 ? '+' : ''}${r.gd}</td><td class="pts">${r.points}</td><td>${r.form ? `<span class="form" title="Last results, oldest first">${[...r.form].map((c) => `<i class="${esc(c)}">${esc(c)}</i>`).join('')}</span>` : ''}</td></tr>`; }).join('')}
+    </tbody></table></div></div>`).join('');
+  const legend = seen.size ? `<div class="zlegend">${[...seen].map(([o, z]) => `<span><i class="zone ${z}"></i>${esc(o)}</span>`).join('')}</div>` : '';
+  return switcher + cards + legend + `<div class="stamp">The teams in this match are highlighted. <button class="btn" data-reload>Reload</button></div>`;
+}
+async function loadView(force = false) {
+  const id = S.selectedId;
+  if (!id || !S.detail) return;
+  if (S.view === 'lineups' && (force || !S.lineups || S.lineups.id !== id)) {
+    S.lineups = { id, loading: true }; render();
+    try { const data = await api(`/api/matches/${encodeURIComponent(id)}/lineups`); if (S.selectedId === id) S.lineups = { id, data }; S.config = { ...S.config, ...data.meta }; }
+    catch (error) { if (S.selectedId === id) S.lineups = { id, error }; }
+  }
+  if (S.view === 'table') {
+    const m = S.detail.match;
+    const sid = m.seasonId || S.matches.find((x) => x.id === m.id)?.seasonId;
+    if (sid && (force || !S.table || S.table.sid !== sid)) {
+      S.table = { sid, loading: true }; render();
+      try { const data = await api(`/api/seasons/${encodeURIComponent(sid)}/standings`); if (S.selectedId === id) S.table = { sid, data }; S.config = { ...S.config, ...data.meta }; }
+      catch (error) { if (S.selectedId === id) S.table = { sid, error }; }
+    }
+  }
+  render();
 }
 
 /* tick the clocks every second without refetching */
@@ -440,6 +580,11 @@ $('#detail').addEventListener('click', async (e) => {
     } catch (err) { S.error = err; }
     return render();
   }
+  const tt = e.target.closest('[data-ttype]');
+  if (tt) { S.tableType = tt.dataset.ttype; return render(); }
+  const v = e.target.closest('[data-view]');
+  if (v) { S.view = v.dataset.view; render(); return loadView(); }
+  if (e.target.closest('[data-reload]')) return loadView(true);
   const b = e.target.closest('[data-ev]'); if (!b) return;
   S.allEvents = b.dataset.ev === 'all'; renderDetail();
 });

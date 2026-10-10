@@ -22,6 +22,11 @@ const PL = { id: 'sr:competition:17', name: 'Premier League' };
 const CH = { id: 'sr:competition:18', name: 'Championship' };
 const LL = { id: 'sr:competition:8', name: 'LaLiga' };
 
+const SEASONS = {
+  'sr:competition:17': { id: 'sr:season:100001', name: 'Premier League 25/26', year: '25/26' },
+  'sr:competition:18': { id: 'sr:season:100002', name: 'Championship 25/26', year: '25/26' },
+  'sr:competition:8': { id: 'sr:season:100003', name: 'LaLiga 25/26', year: '25/26' },
+};
 const team = (name, id, abbreviation) => ({ id: `sr:competitor:${id}`, name, abbreviation });
 const p = (name, type) => ({ id: `sr:player:${Math.abs(hash(name))}`, name, type });
 const hash = (s) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7);
@@ -34,6 +39,7 @@ const yellow = (h, at, side, name) => E(h, at, 'yellow_card', side, [p(name, 'bo
 const red = (h, at, side, name) => E(h, at, 'red_card', side, [p(name, 'booked')]);
 const sub = (h, at, side, on, off) =>
   E(h, at, 'substitution', side, [p(on, 'substituted_in'), p(off, 'substituted_out')]);
+const firstHalf = E(1, 0, 'period_start', null);
 const kickoff = E(1, 0, 'match_started', null);
 const ht = E(1, 47, 'break_start', null);
 const secondHalf = E(2, 45, 'period_start', null);
@@ -44,6 +50,7 @@ const DEFS = [
     id: 'sr:sport_event:90000001', comp: PL, cat: ENG, round: 8, offset: 150,
     home: team('Arsenal', 42, 'ARS'), away: team('Liverpool', 44, 'LIV'), bias: 3,
     events: [
+      firstHalf,
       kickoff,
       goal(1, 12, 'home', 'Alder, James', 'Moss, Kai'),
       yellow(1, 23, 'away', 'Varga, Tomas'),
@@ -65,6 +72,7 @@ const DEFS = [
     id: 'sr:sport_event:90000002', comp: PL, cat: ENG, round: 8, offset: 340,
     home: team('Chelsea', 38, 'CHE'), away: team('Manchester City', 17, 'MCI'), bias: -4,
     events: [
+      firstHalf,
       kickoff,
       yellow(1, 9, 'home', 'Reyes, Marco'),
       goal(1, 27, 'away', 'Lindqvist, Axel', 'Duarte, Nuno'),
@@ -83,6 +91,7 @@ const DEFS = [
     id: 'sr:sport_event:90000003', comp: CH, cat: ENG, round: 12, offset: 60,
     home: team('Leeds United', 34, 'LEE'), away: team('Sunderland', 8, 'SUN'), bias: 0,
     events: [
+      firstHalf,
       kickoff,
       goal(1, 31, 'home', 'Frost, Jamie', null),
       yellow(1, 40, 'away', 'Nolan, Sean'),
@@ -97,6 +106,7 @@ const DEFS = [
     id: 'sr:sport_event:90000004', comp: PL, cat: ENG, round: 8, force: 'FT',
     home: team('Everton', 48, 'EVE'), away: team('Brighton & Hove Albion', 30, 'BHA'), bias: 2,
     events: [
+      firstHalf,
       kickoff,
       goal(1, 18, 'home', 'Doyle, Cian', 'Marsh, Billy'),
       yellow(1, 33, 'away', 'Kato, Haru'),
@@ -116,6 +126,7 @@ const DEFS = [
     id: 'sr:sport_event:90000006', comp: LL, cat: ESP, round: 9, offset: 200,
     home: team('Real Madrid', 2829, 'RMA'), away: team('FC Barcelona', 2817, 'BAR'), bias: 1,
     events: [
+      firstHalf,
       kickoff,
       goal(1, 21, 'home', 'Vidal, Mateo', null),
       goal(2, 63, 'away', 'Ferrer, Pau', null),
@@ -188,6 +199,7 @@ function build(def, nowMs = Date.now()) {
       id: def.id, start_time: new Date(startMs).toISOString(), start_time_confirmed: true,
       sport_event_context: {
         sport: { id: 'sr:sport:1', name: 'Soccer' }, category: def.cat, competition: def.comp,
+        season: { ...SEASONS[def.comp.id], competition_id: def.comp.id },
         round: { type: 'group', number: def.round },
       },
       competitors: [
@@ -227,7 +239,82 @@ function build(def, nowMs = Date.now()) {
 
 const isLive = (def, now) => ['1H', 'HT', '2H'].includes(phaseOf(def, now).phase);
 
+// ---- sample lineups and standings ----
+const SURNAMES = ['Alder', 'Moss', 'Okoro', 'Varga', 'Haddad', 'Brandt', 'Pinto', 'Reyes', 'Cole', 'Webb', 'Santos', 'Lindqvist', 'Duarte', 'Frost', 'Nolan', 'Ito', 'Doyle', 'Marsh', 'Kato', 'Ferrer', 'Vidal', 'Stone', 'Hale', 'Ward', 'Price', 'Quinn', 'Rowe', 'Dunn', 'Bell', 'Cruz', 'Novak', 'Hart', 'Lowe', 'Sato', 'Ruiz', 'Berg'];
+const FIRSTS = ['James', 'Kai', 'Dele', 'Tomas', 'Omar', 'Leon', 'Rui', 'Marco', 'Ethan', 'Callum', 'Axel', 'Nuno', 'Ivo', 'Jamie', 'Sean', 'Ren', 'Cian', 'Billy', 'Haru', 'Pau', 'Mateo'];
+const FORMATIONS = ['4-3-3', '4-4-2', '3-5-2', '4-2-3-1'];
+const num = (id) => Number(String(id).replace(/\D/g, '')) || 1;
+
+function squad(t, formation) {
+  const seed = num(t.id);
+  const nm = (i) => `${SURNAMES[(seed + i * 7) % SURNAMES.length]}, ${FIRSTS[(seed + i * 3) % FIRSTS.length]}`;
+  const parts = formation.split('-').map(Number);
+  const def = parts[0], fwd = parts[parts.length - 1], mid = 10 - def - fwd;
+  const types = ['goalkeeper', ...Array(def).fill('defender'), ...Array(mid).fill('midfielder'), ...Array(fwd).fill('forward')];
+  const shirt = [1, 2, 5, 4, 3, 8, 6, 10, 7, 9, 11];
+  const players = types.map((type, i) => ({ id: `sr:player:${seed}${i}`, name: nm(i), type, jersey_number: shirt[i] || i + 1, starter: true, order: i + 1 }));
+  const benchTypes = ['goalkeeper', 'defender', 'defender', 'midfielder', 'midfielder', 'forward', 'forward'];
+  benchTypes.forEach((type, i) => players.push({ id: `sr:player:${seed}${20 + i}`, name: nm(20 + i), type, jersey_number: 12 + i, starter: false, order: 12 + i }));
+  return players;
+}
+
+const SEASONS_BY_ID = Object.fromEntries(Object.values(SEASONS).map((x) => [x.id, x.name]));
+const CLUBS = {
+  'sr:season:100001': ['Arsenal', 'Liverpool', 'Chelsea', 'Manchester City', 'Everton', 'Brighton & Hove Albion', 'Newcastle United', 'Aston Villa', 'Tottenham Hotspur', 'Manchester United', 'West Ham United', 'Brentford', 'Fulham', 'Crystal Palace', 'Wolverhampton Wanderers', 'AFC Bournemouth', 'Nottingham Forest', 'Burnley', 'Leeds United', 'Sunderland'],
+  'sr:season:100002': ['Leeds United', 'Sunderland', 'Burnley', 'Sheffield United', 'Norwich City', 'Middlesbrough', 'Coventry City', 'Watford', 'West Bromwich Albion', 'Bristol City', 'Millwall', 'Swansea City'],
+  'sr:season:100003': ['Real Madrid', 'FC Barcelona', 'Atletico Madrid', 'Sevilla', 'Real Sociedad', 'Villarreal', 'Athletic Club', 'Valencia', 'Real Betis', 'Girona'],
+};
+const TEAM_IDS = Object.fromEntries(DEFS.flatMap((d) => [[d.home.name, d.home.id], [d.away.name, d.away.id]]));
+
+function standingsFor(seasonId, scale = 1, flip = 0) {
+  const names = CLUBS[seasonId];
+  if (!names) return null;
+  const rows = names.map((name, i) => {
+    const played = Math.max(1, Math.floor(8 * scale));
+    const win0 = Math.max(0, 6 - Math.floor(i * 6 / names.length) - ((i + flip) % 2));
+    const draw = Math.min(played, ((i + flip) * 2 + 1) % 3);
+    const win = Math.min(played - draw, Math.floor(win0 * scale));
+    const loss = Math.max(0, played - win - draw);
+    const gf = win * 2 + draw + ((i + flip) % 4);
+    const ga = loss * 2 + draw + ((i + flip) % 3);
+    const letters = [...Array(5)].map((_, k) => 'WDL'[(i * 7 + k * 3 + flip) % 3]).join('');
+    return { name, id: TEAM_IDS[name] || `sr:competitor:${7000 + i}`, played, win, draw, loss, gf, ga, points: win * 3 + draw, form: letters };
+  }).sort((a, b) => b.points - a.points || (b.gf - b.ga) - (a.gf - a.ga) || b.gf - a.gf);
+  return rows.map((r, i) => ({
+    rank: i + 1, played: r.played, win: r.win, loss: r.loss, draw: r.draw,
+    goals_for: r.gf, goals_against: r.ga, goals_diff: r.gf - r.ga,
+    competitor: { id: r.id, name: r.name, form: r.form }, points: r.points,
+    ...(i < 1 ? { current_outcome: 'Champions League' } : i < 4 ? { current_outcome: 'Champions League Qualification' } : i < 5 ? { current_outcome: 'UEFA Europa League Qualification' }
+      : i >= rows.length - 3 ? { current_outcome: 'Relegation' } : {}),
+    change: 0,
+  }));
+}
+
 module.exports = {
+  lineups(id) {
+    const def = DEFS.find((d) => d.id === id);
+    if (!def) return null;
+    const mk = (t, q) => ({
+      id: t.id, name: t.name, abbreviation: t.abbreviation, qualifier: q,
+      formation: { type: FORMATIONS[num(t.id) % FORMATIONS.length] },
+      manager: { name: `${SURNAMES[num(t.id) % SURNAMES.length]}, ${FIRSTS[num(t.id) % FIRSTS.length]}` },
+      players: squad(t, FORMATIONS[num(t.id) % FORMATIONS.length]),
+    });
+    return { generated_at: new Date().toISOString(), sport_event: build(def).summary.sport_event, lineups: { confirmed: true, competitors: [mk(def.home, 'home'), mk(def.away, 'away')] } };
+  },
+  standings(seasonId) {
+    const total = standingsFor(seasonId);
+    if (!total) return null;
+    const block = (type, rows) => ({
+      type, round: 8,
+      groups: [{ stage: { order: 1, type: 'league', phase: 'regular season', year: '25/26' }, id: 'sr:league:1', name: SEASONS_BY_ID[seasonId], live: true, standings: rows }],
+    });
+    return {
+      generated_at: new Date().toISOString(),
+      standings: [block('total', total), block('home', standingsFor(seasonId, 0.5, 1)), block('away', standingsFor(seasonId, 0.5, 2))],
+    };
+  },
+
   liveSummaries() {
     const now = Date.now() - 8000; // the live list trails the timeline by about 8 seconds
     return { generated_at: new Date(now).toISOString(), summaries: DEFS.filter((d) => isLive(d, now)).map((d) => build(d, now).summary) };

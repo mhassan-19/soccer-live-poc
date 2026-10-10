@@ -101,7 +101,7 @@ const CHECKS = {
   clock_sane: 'Match clock is present and plausible',
   summary_vs_timeline: 'Live list and timeline show the same score',
 };
-const ENDPOINTS = { live: 'Live matches list', daily: 'Daily schedule', timeline: 'Match timeline' };
+const ENDPOINTS = { live: 'Live matches list', daily: 'Daily schedule', timeline: 'Match timeline', lineups: 'Lineups', standings: 'Standings' };
 const TYPES = { score_change: 'Goal', yellow_card: 'Yellow card', red_card: 'Red card', yellow_red_card: 'Second yellow', substitution: 'Substitution', video_assistant_referee: 'VAR check', video_assistant_referee_over: 'VAR decision', penalty_awarded: 'Penalty awarded', penalty_missed: 'Penalty missed', match_started: 'Kick-off', break_start: 'Half-time', period_start: 'Second half', match_ended: 'Full time', injury_time_shown: 'Added time' };
 
 async function stopWatch(id) { await fetch(`/api/watch/${encodeURIComponent(id)}`, { method: 'DELETE' }); load(); }
