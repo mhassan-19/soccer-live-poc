@@ -46,6 +46,10 @@ button{font:inherit;color:inherit;cursor:pointer}
 .tab{flex:1;border:0;background:none;padding:12px 8px;font-weight:600;color:var(--mute);border-bottom:3px solid transparent}
 .tab[aria-selected="true"]{color:var(--deep);border-bottom-color:var(--turf)}
 .find{padding:8px 12px;border-bottom:1px solid var(--line)}
+.find{display:flex;gap:8px}
+.find #day{flex:0 0 auto;width:auto}
+.listnote{padding:8px 14px;font-size:12.5px;color:var(--mute);border-bottom:1px solid var(--line);background:var(--chalk)}
+.listnote.warn{background:#FFF1C7;color:#5C4300}
 .find input{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;background:var(--chalk)}
 .watch{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;font-size:13px;color:var(--mute)}
 .watch select{font:inherit;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:var(--paper)}
@@ -186,7 +190,8 @@ button{font:inherit;color:inherit;cursor:pointer}
         <button class="tab" role="tab" id="tab-live" aria-selected="true">Live</button>
         <button class="tab" role="tab" id="tab-today" aria-selected="false">Today</button>
       </div>
-      <div class="find"><input id="q" type="search" placeholder="Filter by team or league" aria-label="Filter matches by team or league" autocomplete="off"></div>
+      <div class="find"><input id="day" type="date" aria-label="Day" title="Sportradar groups matches by UTC date" hidden><input id="q" type="search" placeholder="Filter by team or league" aria-label="Filter matches by team or league" autocomplete="off"></div>
+      <div id="listnote" class="listnote" hidden></div>
       <div id="matches"></div>
     </section>
     <section class="detail" id="detail" aria-live="polite"></section>
@@ -200,7 +205,7 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':
 const S = {
   config: null, scope: 'live', england: false, q: '', paused: false,
   matches: [], receivedAt: 0, selectedId: null, detail: null, detailAt: 0,
-  allEvents: false, view: 'match', lineups: null, table: null, tableType: 'total', error: null, updated: null, timer: null,
+  allEvents: false, view: 'match', lineups: null, table: null, tableType: 'total', day: new Date().toLocaleDateString('en-CA'), daily: null, error: null, updated: null, timer: null,
 };
 
 /* ---------- API ---------- */
@@ -212,8 +217,8 @@ async function api(path, method = 'GET') {
 }
 
 async function loadList() {
-  const data = await api(`/api/matches?scope=${S.scope}&england=${S.england ? 1 : 0}`);
-  S.matches = data.matches; S.receivedAt = Date.now(); S.config = { ...S.config, ...data.meta };
+  const data = await api(`/api/matches?scope=${S.scope}&england=${S.england ? 1 : 0}${S.scope === 'today' ? `&date=${S.day}` : ''}`);
+  S.matches = data.matches; S.daily = data.daily || null; S.receivedAt = Date.now(); S.config = { ...S.config, ...data.meta };
 }
 async function loadDetail() {
   if (!S.selectedId) return;
@@ -225,7 +230,6 @@ async function loadDetail() {
 async function refresh() {
   try {
     await loadList();
-    if (!S.selectedId && S.matches.length) selectMatch(sortMatches(S.matches)[0].id, false);
     await loadDetail();
     S.error = null; S.updated = new Date();
   } catch (err) { S.error = err; }
@@ -299,7 +303,20 @@ function renderHeader() {
   if (S.error) n.innerHTML = `<b>${esc(S.error.message)}</b>${esc(S.error.hint || '')}`;
 }
 
+function renderListNote() {
+  const n = $('#listnote');
+  const d = S.scope === 'today' ? S.daily : null;
+  n.hidden = !d;
+  if (!d) return;
+  const warn = d.truncated;
+  n.className = 'listnote' + (warn ? ' warn' : '');
+  n.textContent = `${d.count} matches for ${d.date}, loaded with ${d.pages} Sportradar call${d.pages === 1 ? '' : 's'}.`
+    + (warn ? ` The limit of ${d.maxPages} calls was reached${d.partialError ? ` or a call failed (${d.partialError})` : ''}, so later matches may be missing.` : '')
+    + (S.england ? ' England only is on.' : '');
+}
 function renderList() {
+  renderListNote();
+  $('#day').hidden = S.scope !== 'today';
   const el = $('#matches');
   const liveCount = S.matches.filter(isLive).length;
   $('#tab-live').textContent = 'Live' + (S.scope === 'live' || liveCount ? ` (${liveCount})` : '');
@@ -589,7 +606,7 @@ $('#detail').addEventListener('click', async (e) => {
   S.allEvents = b.dataset.ev === 'all'; renderDetail();
 });
 function setScope(scope) {
-  S.scope = scope; S.matches = [];
+  S.scope = scope; S.matches = []; S.daily = null;
   $('#tab-live').setAttribute('aria-selected', scope === 'live');
   $('#tab-today').setAttribute('aria-selected', scope === 'today');
   render(); refresh();
@@ -599,6 +616,8 @@ $('#tab-today').onclick = () => setScope('today');
 $('#england').onclick = (e) => { S.england = !S.england; e.currentTarget.setAttribute('aria-pressed', S.england); S.matches = []; render(); refresh(); };
 $('#pause').onclick = (e) => { S.paused = !S.paused; e.currentTarget.setAttribute('aria-pressed', S.paused); e.currentTarget.textContent = S.paused ? 'Resume auto-refresh' : 'Pause auto-refresh'; };
 $('#refresh').onclick = refresh;
+$('#day').value = S.day;
+$('#day').addEventListener('change', (e) => { if (!e.target.value) return; S.day = e.target.value; S.matches = []; S.daily = null; render(); refresh(); });
 $('#q').addEventListener('input', (e) => { S.q = e.target.value; renderList(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden && !S.paused && S.updated && Date.now() - S.updated > 20000) refresh(); });
 

@@ -21,6 +21,12 @@ With no API key it starts in **sample data** mode (simulated matches with a runn
 
 The server throttles to one request per `MIN_REQUEST_INTERVAL_MS`, caches responses for 15 to 60 seconds, retries on 429, and serves the last good data if a call fails.
 
+## Why the Today list needs several calls
+Sportradar returns at most 200 matches per call on the daily feed, so a busy day takes several calls (about 5 for 900 matches). The app asks for pages until one comes back short, up to `MAX_DAILY_PAGES`, and reuses the result for `DAILY_CACHE_SECONDS` (Sportradar itself refreshes this feed every 5 minutes). The note above the list shows how many matches were loaded and with how many calls, and warns if the cap was reached. Pick a day with the date box and use the filter (for example "Egypt") to narrow a long list. Match details, lineups and tables are fetched only when you click them.
+
+## Server clock
+Delay measurements compare Sportradar's timestamps with this computer's clock. The app reads Sportradar's clock from each response and corrects for any difference, and the performance page warns if the system clock is more than 10 seconds off. Turn on automatic time sync on the server anyway.
+
 ## Lineups and table
 Open a match, then use the Match / Lineups / Table switch under the scoreboard. Lineups come from `/sport_events/{id}/lineups.json` (cached 2 minutes) and the table from `/seasons/{season_id}/standings.json` (cached 5 minutes, season id taken from the match). Each is fetched only when you open its tab, to save quota. The pitch layout is approximate. If your feed uses different field names, check `normLineups` and `normStandings` in `server.js`.
 

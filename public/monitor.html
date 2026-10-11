@@ -53,6 +53,8 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
     </div>
   </header>
 
+  <div id="clock" class="card" style="background:#FFF1C7;border-color:#E8CE7A" hidden></div>
+
   <section class="card" aria-labelledby="w">
     <h2 id="w">Matches being measured</h2>
     <p class="d">Event delay can only be timed on matches the server checks at a steady interval. Open a match on the main page and choose "Start measuring". A shorter interval gives finer timing but uses more of your API quota.</p>
@@ -111,6 +113,15 @@ function render(d) {
   const sample = d.meta.source === 'sample';
   $('#mode').textContent = sample ? 'Sample data (timings are simulated)' : 'Live feed';
   $('#mode').className = 'badge' + (sample ? ' sample' : '');
+
+  const skew = d.meta.clockSkewMs;
+  const clockBox = $('#clock');
+  clockBox.hidden = !(skew != null && Math.abs(skew) > 10000);
+  if (!clockBox.hidden) {
+    const s = Math.abs(skew);
+    const span = s >= 3600000 ? `${(s / 3600000).toFixed(1)} hours` : s >= 60000 ? `${Math.round(s / 60000)} minutes` : `${Math.round(s / 1000)} seconds`;
+    clockBox.innerHTML = `<h2>This server's clock is ${span} ${skew > 0 ? 'behind' : 'ahead of'} real time</h2><p class="d" style="margin:0">Compared with the time Sportradar reports. Event delays below are corrected for it, but fix the system clock (turn on automatic time sync) so logs and timestamps are right.</p>`;
+  }
 
   $('#watchers').innerHTML = d.watchers.length ? d.watchers.map((w) => `
     <div class="watchrow"><div><b>${esc(w.label)}</b><small>Every ${w.intervalSec} s, ${w.polls} checks so far, about ${w.callsPerHour} calls per hour${w.lastError ? `, last error: ${esc(w.lastError)}` : ''}</small></div>

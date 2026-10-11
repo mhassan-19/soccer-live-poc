@@ -12,7 +12,10 @@ const USE_MOCK = useMockEnv ? useMockEnv === 'true' : !API_KEY;
 const ACCESS = process.env.SPORTRADAR_ACCESS_LEVEL || 'trial';
 const VERSION = process.env.SPORTRADAR_VERSION || 'v4';
 const LANG = process.env.SPORTRADAR_LANG || 'en';
-const BASE = `https://api.sportradar.com/soccer/${ACCESS}/${VERSION}/${LANG}`;
+const BASE = (process.env.SPORTRADAR_BASE_URL || '').trim().replace(/\/$/, '') || `https://api.sportradar.com/soccer/${ACCESS}/${VERSION}/${LANG}`;
+const DAILY_PAGE = 200;                                        // Sportradar's maximum page size for the daily feed
+const MAX_DAILY_PAGES = Math.max(1, Number(process.env.MAX_DAILY_PAGES || 8));
+const DAILY_CACHE_MS = Math.max(60, Number(process.env.DAILY_CACHE_SECONDS || 600)) * 1000;
 const MIN_INTERVAL = Number(process.env.MIN_REQUEST_INTERVAL_MS || 1100);
 const POLL_SECONDS = Math.max(10, Number(process.env.POLL_SECONDS || 30));
 const MAX_WATCHERS = Number(process.env.MAX_WATCHERS || 3);
@@ -34,6 +37,8 @@ const seenEvents = new Set();
 const lastFetchOf = new Map();  // matchId -> time of previous timeline fetch
 const lastSummary = new Map();  // matchId -> score from the live list
 let upstreamCalls = 0;
+let clockSkewMs = null; // Sportradar's clock minus this server's clock, from the HTTP Date header
+const trueNow = () => Date.now() + (clockSkewMs ?? 0);
 
 function stats(nums) {
   const a = nums.filter(Number.isFinite).sort((x, y) => x - y);
@@ -59,9 +64,11 @@ async function attemptFetch(pathname, kind) {
   try {
     const res = await fetch(`${BASE}${pathname}`, {
       headers: { 'x-api-key': API_KEY, accept: 'application/json' },
-      signal: AbortSignal.timeout(12000),
+      signal: AbortSignal.timeout(kind === 'daily' ? 30000 : 12000),
     });
     const ttfbMs = Math.round(performance.now() - t0);
+    const dateHeader = Date.parse(res.headers.get('date') || '');
+    if (Number.isFinite(dateHeader)) clockSkewMs = dateHeader - Date.now();
     let data = null, bytes = 0;
     if (res.ok) { const text = await res.text(); bytes = text.length; data = JSON.parse(text); }
     push(calls, { ts, kind, ms: Math.round(performance.now() - t0), ttfbMs, status: res.status, ok: res.ok, bytes });
@@ -125,10 +132,30 @@ async function fetchLive() {
 }
 const getLive = () => (USE_MOCK ? fetchLive() : cached('live', 15000, fetchLive));
 
+// The daily feed returns at most 200 matches per call, so we ask for further pages until one comes back short.
+async function fetchDailyAll(date) {
+  const all = [];
+  let pages = 0, truncated = false, partialError = null;
+  for (let p = 0; p < MAX_DAILY_PAGES; p++) {
+    let data;
+    try {
+      data = await upstream(`/schedules/${date}/summaries.json?start=${p * DAILY_PAGE}&limit=${DAILY_PAGE}`, 'daily');
+    } catch (err) {
+      if (p === 0) throw err;                 // nothing loaded: report the error
+      partialError = err.message; truncated = true; break; // keep what we have
+    }
+    pages++;
+    const list = data.summaries || [];
+    all.push(...list);
+    if (list.length < DAILY_PAGE) return { summaries: all, pages, truncated: false, partialError };
+  }
+  return { summaries: all, pages, truncated: truncated || pages >= MAX_DAILY_PAGES, partialError };
+}
+
 const getDaily = (date) =>
   USE_MOCK
-    ? mockCall('daily', () => mock.dailySummaries())
-    : cached(`daily:${date}`, 60000, () => upstream(`/schedules/${date}/summaries.json`, 'daily'));
+    ? mockCall('daily', () => ({ ...mock.dailySummaries(), pages: 1, truncated: false }))
+    : cached(`daily:${date}`, DAILY_CACHE_MS, () => fetchDailyAll(date));
 
 async function fetchTimeline(id) {
   const data = USE_MOCK ? await mockCall('timeline', () => mock.timeline(id)) : await upstream(`/sport_events/${id}/timeline.json`, 'timeline');
@@ -357,7 +384,7 @@ function normStandings(raw) {
 const label = (m) => `${m.home.name} v ${m.away.name}`;
 
 function observeTimeline(id, raw) {
-  const now = Date.now();
+  const now = trueNow(); // corrected with Sportradar's clock, so a wrong system clock does not distort delays
   const prev = lastFetchOf.get(id);
   lastFetchOf.set(id, now);
   const m = normMatch(raw);
@@ -504,6 +531,7 @@ const meta = () => ({
   upstreamCalls,
   fetchedAt: new Date().toISOString(),
   watching: [...watchers.keys()],
+  clockSkewMs,
 });
 
 const HINTS = {
@@ -527,19 +555,22 @@ app.get('/api/config', (req, res) => res.json({ ...meta(), pollSeconds: POLL_SEC
 app.get('/api/matches', async (req, res) => {
   const scope = req.query.scope === 'today' ? 'today' : 'live';
   const englandOnly = req.query.england === '1'; // all leagues unless asked otherwise
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || '')) ? String(req.query.date) : todayUTC();
+  let dailyInfo = null;
   try {
     let items;
     if (scope === 'live') {
       items = (await getLive()).summaries || [];
     } else {
-      const [daily, live] = await Promise.all([getDaily(todayUTC()), getLive().catch(() => ({ summaries: [] }))]);
+      const [daily, live] = await Promise.all([getDaily(date), getLive().catch(() => ({ summaries: [] }))]);
       const byId = new Map((daily.summaries || []).map((s) => [s.sport_event?.id, s]));
       (live.summaries || []).forEach((s) => byId.set(s.sport_event?.id, s));
       items = [...byId.values()];
+      dailyInfo = { date, count: (daily.summaries || []).length, pages: daily.pages ?? 1, truncated: !!daily.truncated, partialError: daily.partialError || null, maxPages: MAX_DAILY_PAGES };
     }
     let matches = items.map(normMatch).filter((m) => m.id);
     if (englandOnly) matches = matches.filter((m) => m.isEngland);
-    res.json({ matches, meta: meta() });
+    res.json({ matches, daily: dailyInfo, meta: meta() });
   } catch (err) {
     sendError(res, err);
   }
